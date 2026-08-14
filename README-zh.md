@@ -4,6 +4,10 @@
 
 Hermes 桌面端插件：在一个右侧 pane 里查看各家大模型 API 额度快照，并在状态栏芯片上瞟一眼最紧张的额度。中文版说明（可与此处互相切换）。
 
+## 效果截图
+
+![usage-kanban 截图](docs/screenshot.jpg)
+
 ## 支持的数据源
 
 - **Codex Plus**：周额度（自动检测本机 ~/.codex/auth.json，无需填 key）

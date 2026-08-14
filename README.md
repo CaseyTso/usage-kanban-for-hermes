@@ -4,6 +4,10 @@
 
 A Hermes desktop plugin that shows a snapshot of your LLM API quotas in a right-side pane. Also adds a status-bar chip so you can see the tightest quota at a glance.
 
+## Screenshot
+
+![usage-kanban screenshot](docs/screenshot.jpg)
+
 ## Supported sources
 
 - **Codex Plus** — weekly quota (auto-detects the local `~/.codex/auth.json`; no key needed)
