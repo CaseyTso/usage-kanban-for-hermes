@@ -62,3 +62,9 @@ Hermes 桌面端插件：在一个右侧 pane 里查看各家大模型 API 额�
 - **Codex 卡片报"会话已过期"**：在 Codex CLI 里重新登录（codex login）。
 - **opencode-go 报 403**：该 key 没有 Go 订阅。
 - **想加新 provider**：后端加一个 fetch 函数 + /status 聚合，前端加一张卡片即可（provider/account 抽象已预留）。
+
+## 许可
+
+Copyright (C) 2026 CaseyTso
+
+本项目以 GNU Affero General Public License v3.0（AGPL-3.0）发布，全文见 LICENSE。
