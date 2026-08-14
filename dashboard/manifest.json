@@ -1,0 +1,5 @@
+{
+  "name": "usage-kanban",
+  "label": "Usage Kanban",
+  "api": "plugin_api.py"
+}

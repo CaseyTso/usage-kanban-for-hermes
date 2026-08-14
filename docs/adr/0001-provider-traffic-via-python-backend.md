@@ -1,0 +1,3 @@
+# All provider HTTP traffic goes through the plugin Python backend
+
+The quota data comes from three providers with very different CORS support and auth (opencode-go has no CORS; Codex Plus needs an OAuth token refresh against auth.openai.com). We route every provider request through the plugin's Python backend (plugin_api.py, called via ctx.rest), instead of fetching some providers directly from the renderer. This keeps one network path for token refresh, retries, and error normalisation. The rejected alternative — opencode-go via the backend but Codex/DeepSeek fetched directly in the renderer — would only have saved one local hop for DeepSeek while splitting the networking code in two and very likely failing CORS on the Codex token-refresh call.
