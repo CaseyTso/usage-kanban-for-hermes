@@ -1,70 +1,78 @@
-# 额度看板（usage-kanban）
+# Usage Kanban (usage-kanban)
 
-Hermes 桌面端插件：在一个右侧 pane 里查看各家大模型 API 额度快照。
+> **English** · [**中文（简体）**](README-zh.md)
 
-## 支持的数据源
+A Hermes desktop plugin that shows a snapshot of your LLM API quotas in a right-side pane. Also adds a status-bar chip so you can see the tightest quota at a glance.
 
-- **Codex Plus**：周额度（自动检测本机 ~/.codex/auth.json，无需填 key）
-- **opencode-go**：每个 API key 的 5 小时 / 本周 / 本月三档窗口
-- **DeepSeek**：余额（总额 + 赠送/充值明细，可展开）
+## Supported sources
 
-## 安装
+- **Codex Plus** — weekly quota (auto-detects the local `~/.codex/auth.json`; no key needed)
+- **opencode-go** — three windows per API key: rolling 5h / weekly / monthly
+- **DeepSeek** — balance (total + expandable granted/topped-up breakdown)
 
-### 1. 桌面插件（保存即热更新，官方支持 symlink）
+## Installation
 
-    ln -s "$PWD" ~/.hermes/desktop-plugins/usage-kanban
+### 1. Desktop plugin (hot-reloads on save; symlinks are officially supported)
 
-或把本目录整体拷贝到 ~/.hermes/desktop-plugins/usage-kanban。
-注意：目录名必须等于插件 id（usage-kanban）。
+```bash
+ln -s "$PWD" ~/.hermes/desktop-plugins/usage-kanban
+```
 
-### 2. Python 后端（需重启 gateway 才生效）
+Or copy this directory to `~/.hermes/desktop-plugins/usage-kanban`. Note: the directory name must equal the plugin id (`usage-kanban`).
 
-    mkdir -p ~/.hermes/plugins/usage-kanban/dashboard
-    cp dashboard/manifest.json dashboard/plugin_api.py ~/.hermes/plugins/usage-kanban/dashboard/
+### 2. Python backend (takes effect after a gateway restart)
 
-然后在 ~/.hermes/config.yaml 的 plugins.enabled 列表中加入 usage-kanban，并**重启 Hermes gateway**。
-重启前看板会显示"后端不可用"提示，属正常现象。
+```bash
+mkdir -p ~/.hermes/plugins/usage-kanban/dashboard
+cp dashboard/manifest.json dashboard/plugin_api.py ~/.hermes/plugins/usage-kanban/dashboard/
+```
 
-### 3. 添加账号
+Then add `usage-kanban` to the `plugins.enabled` list in `~/.hermes/config.yaml`, and **restart the Hermes gateway**. Until then the board shows a "backend unavailable" message, which is expected.
 
-打开设置页（侧边栏「额度看板设置」，或 pane 右上角「设置」）：
+### 3. Add accounts
 
-- opencode-go：别名 + API key（明文存储在后端目录 accounts.json，界面只显示脱敏尾号）
-- DeepSeek：同上
-- Codex Plus：无需配置
+Open the settings page (sidebar "额度看板设置", or the "设置" button in the pane's top-right):
 
-## 设置项
+- **opencode-go**: alias + API key (stored in plain text in the backend `accounts.json`; only the trailing few characters are shown in the UI)
+- **DeepSeek**: same as above
+- **Codex Plus**: nothing to configure — it appears automatically
 
-- **状态栏芯片显示模式**：固定订阅（自选显示哪一个）/ 自动（异常优先，无异常显最紧张项）/ 始终最紧张项 / 始终异常计数
-- **DeepSeek 金额警戒**：余额低于黄线/红线变黄/红（默认 10 元 / 2 元，可改）
-- 百分比窗口固定高亮：剩余 < 20% 黄、< 5% 红
-- 账号隐藏开关（隐藏的账号不出现在看板与芯片）
+> For a full walkthrough in Chinese, see [README-zh.md](README-zh.md).
 
-## 数据来源说明
+## Settings
 
-- Codex Plus 的 wham/usage 与 opencode-go 的 zen/go/v1/usage 是官方客户端使用的**非公开接口**，可能随时变化；接口失效时对应卡片会显示错误原因。
-- DeepSeek balance 为官方公开接口。
-- 所有请求由 Python 后端统一代理（见 docs/adr/0001-provider-traffic-via-python-backend.md）。
+- **Status-bar chip display mode**: pinned subscription (you pick which one) / auto (errors first, else the tightest window) / always tightest / always error count
+- **DeepSeek money alert**: turns yellow/red when balance is below configurable lines (default ¥10 / ¥2)
+- **Percent-window highlighting**: remaining < 20% yellow, < 5% red (fixed)
+- **Hide account** toggle (hidden accounts are excluded from the board and the chip)
 
-## 目录结构
+## Data-source notes
 
-    plugin.js                  桌面插件（单文件，全部逻辑内联）
-    dashboard/manifest.json    后端清单
-    dashboard/plugin_api.py    后端：额度聚合 + 账号/设置存储 + Codex token 自动续期
-    CONTEXT.md                 领域术语表
-    docs/adr/                  架构决策记录
-    research/                  调研笔记（额度 API、SDK 事实、视觉验收备注）
-    FACTS.md                   Hermes 插件 SDK 事实核查报告
+- Codex Plus `wham/usage` and opencode-go `zen/go/v1/usage` are **undocumented endpoints** used by the official clients; they may change at any time. When that happens a card shows the error reason.
+- DeepSeek `balance` is an official, public endpoint.
+- All requests are proxied through the Python backend (see `docs/adr/0001-provider-traffic-via-python-backend.md`).
 
-## 常见问题
+## Project layout
 
-- **看板显示"后端不可用"**：config.yaml 未启用或 gateway 未重启（见安装第 2 步）。
-- **Codex 卡片报"会话已过期"**：在 Codex CLI 里重新登录（codex login）。
-- **opencode-go 报 403**：该 key 没有 Go 订阅。
-- **想加新 provider**：后端加一个 fetch 函数 + /status 聚合，前端加一张卡片即可（provider/account 抽象已预留）。
+```text
+plugin.js                  Desktop plugin (single self-contained file)
+dashboard/manifest.json    Backend manifest
+dashboard/plugin_api.py    Backend: quota aggregation + account/settings storage + Codex token auto-refresh
+CONTEXT.md                 Domain glossary
+docs/adr/                  Architecture decision records
+research/                  Research notes (quota APIs, SDK facts, vision-acceptance notes)
+FACTS.md                   Hermes plugin SDK fact-finding report
+```
 
-## 许可
+## Troubleshooting
+
+- **Board shows "backend unavailable"** — the plugin is not in `plugins.enabled`, or the gateway wasn't restarted (see step 2).
+- **Codex card says "session expired"** — re-login in the Codex CLI (`codex login`).
+- **opencode-go reports 403** — that key has no Go subscription.
+- **Want another provider** — add a fetch function in the backend + one aggregation branch in `/status`, then add one card in the front end (the provider/account abstraction is ready for this).
+
+## License
 
 Copyright (C) 2026 CaseyTso
 
-本项目以 GNU Affero General Public License v3.0（AGPL-3.0）发布，全文见 LICENSE。
+Released under the GNU Affero General Public License v3.0 (AGPL-3.0). See [LICENSE](LICENSE).
