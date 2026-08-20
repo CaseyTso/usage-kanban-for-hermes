@@ -11,6 +11,7 @@ A Hermes desktop plugin that shows a snapshot of your LLM API quotas in a right-
 ## Supported sources
 
 - **Codex Plus** — weekly quota (auto-detects the local `~/.codex/auth.json`; no key needed)
+- **Antigravity (CLIProxyAPI)** — auto-detects accounts from `~/.cli-proxy-api/auth/antigravity-*.json`; monitors Gemini (5h / weekly) and Claude / GPT (5h / weekly) quota windows with plan tier tag (e.g. Google AI Pro / Antigravity)
 - **opencode-go** — three windows per API key: rolling 5h / weekly / monthly
 - **DeepSeek** — balance (total + expandable granted/topped-up breakdown)
 
@@ -39,7 +40,8 @@ Open the settings page (sidebar "额度看板设置", or the "设置" button in 
 
 - **opencode-go**: alias + API key (stored in plain text in the backend `accounts.json`; only the trailing few characters are shown in the UI)
 - **DeepSeek**: same as above
-- **Codex Plus**: nothing to configure — it appears automatically
+- **Codex Plus**: nothing to configure — it appears automatically when `~/.codex/auth.json` is present
+- **Antigravity**: nothing to configure — accounts are discovered automatically from `~/.cli-proxy-api/auth/antigravity-*.json`
 
 > For a full walkthrough in Chinese, see [README-zh.md](README-zh.md).
 
@@ -47,12 +49,13 @@ Open the settings page (sidebar "额度看板设置", or the "设置" button in 
 
 - **Status-bar chip display mode**: pinned subscription (you pick which one) / auto (errors first, else the tightest window) / always tightest / always error count
 - **DeepSeek money alert**: turns yellow/red when balance is below configurable lines (default ¥10 / ¥2)
-- **Percent-window highlighting**: remaining < 20% yellow, < 5% red (fixed)
+- **Percent-window highlighting**: remaining < 20% yellow, < 5% red (fixed); values between 0% and 1% display two decimal places (e.g. 0.02%)
 - **Hide account** toggle (hidden accounts are excluded from the board and the chip)
 
 ## Data-source notes
 
-- Codex Plus `wham/usage` and opencode-go `zen/go/v1/usage` are **undocumented endpoints** used by the official clients; they may change at any time. When that happens a card shows the error reason.
+- Codex Plus `wham/usage`, opencode-go `zen/go/v1/usage`, and Antigravity `daily-cloudcode-pa.googleapis.com` internal endpoints are **undocumented endpoints** used by official clients/CLI proxies; they may change at any time. When that happens a card shows the error reason.
+- Antigravity network requests support an HTTP/HTTPS proxy override via `CLIPROXY_PROXY_URL` and automatically fall back to the top-level `proxy-url` in `~/.cli-proxy-api/config.yaml`. The stdlib backend does not implement SOCKS; point `CLIPROXY_PROXY_URL` at an HTTP/HTTPS proxy endpoint when CLIProxyAPI itself uses SOCKS. The auth credential directory can be customized via `CLIPROXY_AUTH_DIR`. Access tokens are managed and renewed by CLIProxyAPI.
 - DeepSeek `balance` is an official, public endpoint.
 - All requests are proxied through the Python backend (see `docs/adr/0001-provider-traffic-via-python-backend.md`).
 
@@ -61,17 +64,20 @@ Open the settings page (sidebar "额度看板设置", or the "设置" button in 
 ```text
 plugin.js                  Desktop plugin (single self-contained file)
 dashboard/manifest.json    Backend manifest
-dashboard/plugin_api.py    Backend: quota aggregation + account/settings storage + Codex token auto-refresh
+dashboard/plugin_api.py    Backend: quota aggregation + account/settings storage + Codex token auto-refresh + Antigravity discovery
 CONTEXT.md                 Domain glossary
 docs/adr/                  Architecture decision records
 research/                  Research notes (quota APIs, SDK facts, vision-acceptance notes)
 FACTS.md                   Hermes plugin SDK fact-finding report
+tests/                     Unit test suite (stdlib unittest)
 ```
 
 ## Troubleshooting
 
 - **Board shows "backend unavailable"** — the plugin is not in `plugins.enabled`, or the gateway wasn't restarted (see step 2).
 - **Codex card says "session expired"** — re-login in the Codex CLI (`codex login`).
+- **Antigravity card reports 401** — access token is expired or invalid; wait for CLIProxyAPI to renew credentials, or check account authorization.
+- **Antigravity card reports network / proxy error** — verify your proxy configuration in `CLIPROXY_PROXY_URL` or `~/.cli-proxy-api/config.yaml` (`proxy-url`).
 - **opencode-go reports 403** — that key has no Go subscription.
 - **Want another provider** — add a fetch function in the backend + one aggregation branch in `/status`, then add one card in the front end (the provider/account abstraction is ready for this).
 

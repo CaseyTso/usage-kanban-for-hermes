@@ -1,5 +1,5 @@
 // usage-kanban — Hermes desktop plugin (single-file disk plugin)
-// Quota kanban for Codex Plus / opencode-go / DeepSeek.
+// Quota kanban for Codex Plus / Antigravity / opencode-go / DeepSeek.
 // All provider HTTP goes through the Python backend (docs/adr/0001).
 
 import {
@@ -31,8 +31,17 @@ const el = function (type, props) { return jsx(type, props) }
 const els = function (type, props) { return jsxs(type, props) }
 const nbsp = function (s) { return s == null ? '' : String(s) }
 const fmtMoney = function (s) { const n = Number(s); return Number.isFinite(n) ? n.toFixed(2) : nbsp(s) }
-const pctWidth = function (v) { return Math.max(0, Math.min(100, Math.round(v))) + '%' }
-const remaining = function (used) { return 100 - used }
+const fmtPct = function (used) {
+  if (used == null || !Number.isFinite(Number(used))) return '—'
+  const n = Number(used)
+  if (n > 0 && n < 1) return n.toFixed(2) + '%'
+  return Math.round(n) + '%'
+}
+const pctWidth = function (v) {
+  if (v == null || !Number.isFinite(Number(v))) return '0%'
+  return Math.max(0, Math.min(100, Number(v))) + '%'
+}
+const remaining = function (used) { return used == null ? 100 : 100 - used }
 
 const OC_LABELS = { rolling: '5 小时', weekly: '本周', monthly: '本月' }
 
@@ -82,7 +91,7 @@ function Bar(props) {
     els('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: C.fg2 }, children: [
       el('span', { children: props.label }),
       els('span', { children: [
-        el('span', { children: '已用 ' + Math.round(used) + '%' }),
+        el('span', { children: '已用 ' + fmtPct(used) }),
         props.resetsAt ? el('span', { style: { marginLeft: 6, color: C.fg3 }, children: fmtReset(props.resetsAt) }) : null,
         props.suffix != null ? el('span', { style: { marginLeft: 6, color: C.danger }, children: props.suffix }) : null,
       ] }),
@@ -113,6 +122,19 @@ function CodexCard(props) {
     return el(Bar, { key: w.key, label: '周窗口', used: w.usedPercent, resetsAt: w.resetsAt })
   })
   return el(Card, { title: 'Codex', tag: tag, error: codex.status === 'error' ? codex.error : null, children: windows })
+}
+
+function AntigravityCard(props) {
+  const acc = props.acc
+  if (!acc) return null
+  const title = acc.alias ? (acc.email && acc.alias !== acc.email ? acc.alias + ' (' + acc.email + ')' : acc.alias) : (acc.email || acc.id)
+  const tag = acc.plan || 'Antigravity'
+  const err = acc.status === 'error' ? acc.error : null
+  const windows = (acc.windows || []).map(function (w, idx) {
+    const label = (w.group ? w.group + ' · ' : '') + (w.label || '')
+    return el(Bar, { key: w.key || idx, label: label, used: w.usedPercent, resetsAt: w.resetsAt })
+  })
+  return el(Card, { title: title, tag: tag, error: err, children: windows })
 }
 
 function OpencodeCard(props) {
@@ -171,6 +193,7 @@ function App() {
   ] })
 
   const codex = status.codex
+  const agAccounts = ((status.antigravity && status.antigravity.accounts) || []).filter(function (a) { return !a.hidden })
   const ocAccounts = ((status.opencode && status.opencode.accounts) || []).filter(function (a) { return !a.hidden })
   const dsAccounts = ((status.deepseek && status.deepseek.accounts) || []).filter(function (a) { return !a.hidden })
 
@@ -183,10 +206,11 @@ function App() {
       ] }),
     ] }),
     el(CodexCard, { codex: codex }),
+    agAccounts.map(function (a) { return el(AntigravityCard, { key: a.id, acc: a }) }),
     ocAccounts.map(function (a) { return el(OpencodeCard, { key: a.id, acc: a }) }),
     dsAccounts.map(function (a) { return el(DeepseekCard, { key: a.id, acc: a, settings: settings }) }),
     els('div', { style: { marginTop: 'auto', paddingTop: 8, fontSize: 10, color: C.fg3, display: 'flex', flexDirection: 'column', gap: 2 }, children: [
-      el('span', { children: ocAccounts.length + dsAccounts.length + ' 个已配置账号' + (codex && codex.present ? ' · Codex 已检测' : '') }),
+      el('span', { children: (ocAccounts.length + dsAccounts.length + agAccounts.length) + ' 个账号' + (agAccounts.length > 0 ? '（含 ' + agAccounts.length + ' 个 Antigravity）' : '') + (codex && codex.present ? ' · Codex 已检测' : '') }),
       status.generatedAt ? el('span', { children: '更新于 ' + fmtGenerated(status.generatedAt) }) : null,
       el('span', { children: '点击「设置」管理账号与芯片显示' }),
     ] }),
@@ -198,21 +222,30 @@ function App() {
 function errorCount(status) {
   let n = 0
   if (status.codex && status.codex.status === 'error') n++
-  ;((status.opencode && status.opencode.accounts) || []).forEach(function (a) { if (a.status === 'error') n++ })
-  ;((status.deepseek && status.deepseek.accounts) || []).forEach(function (a) { if (a.status === 'error' || a.isAvailable === false) n++ })
+  ;((status.antigravity && status.antigravity.accounts) || []).forEach(function (a) { if (!a.hidden && a.status === 'error') n++ })
+  ;((status.opencode && status.opencode.accounts) || []).forEach(function (a) { if (!a.hidden && a.status === 'error') n++ })
+  ;((status.deepseek && status.deepseek.accounts) || []).forEach(function (a) { if (!a.hidden && (a.status === 'error' || a.isAvailable === false)) n++ })
   return n
 }
 
 function worstWindow(status) {
   let best = null
   const consider = function (text, w) {
-    if (!w) return
+    if (!w || w.usedPercent == null) return
     if (!best || w.usedPercent > best.used) {
-      best = { used: w.usedPercent, text: text + ' ' + Math.round(w.usedPercent) + '%', alert: remaining(w.usedPercent) < 5 }
+      best = { used: w.usedPercent, text: text + ' ' + fmtPct(w.usedPercent), alert: remaining(w.usedPercent) < 5 }
     }
   }
   const codex = status.codex
   if (codex && codex.status === 'ok') consider('Codex · 周', (codex.windows || [])[0])
+  ;((status.antigravity && status.antigravity.accounts) || []).forEach(function (a) {
+    if (a.hidden || a.status !== 'ok') return
+    const name = 'Antigravity ' + (a.alias || a.email || a.id)
+    ;(a.windows || []).forEach(function (w) {
+      const label = (w.group ? w.group + ' · ' : '') + (w.label || '')
+      consider(name + ' · ' + label, w)
+    })
+  })
   ;((status.opencode && status.opencode.accounts) || []).forEach(function (a) {
     if (a.hidden || a.status !== 'ok') return
     const ws = a.windows || []
@@ -230,15 +263,25 @@ function resolvePinned(status, pinned) {
     const codex = status.codex
     if (!codex || !codex.present || codex.status !== 'ok') return null
     const w = ((codex.windows || []).find(function (x) { return x.key === (pinned.windowKey || 'weekly') })) || (codex.windows || [])[0]
-    if (!w) return null
-    return { text: 'Codex · 周 ' + Math.round(w.usedPercent) + '%', alert: remaining(w.usedPercent) < 5 }
+    if (!w || w.usedPercent == null) return null
+    return { text: 'Codex · 周 ' + fmtPct(w.usedPercent), alert: remaining(w.usedPercent) < 5 }
+  }
+  if (pinned.provider === 'antigravity') {
+    const acc = ((status.antigravity && status.antigravity.accounts) || []).find(function (a) { return a.id === pinned.accountId })
+    if (!acc || acc.hidden || acc.status !== 'ok') return null
+    const ws = acc.windows || []
+    const w = ws.find(function (x) { return x.key === pinned.windowKey || ((x.group ? x.group + ' · ' : '') + x.label) === pinned.windowKey })
+    if (!w || w.usedPercent == null) return null
+    const name = acc.alias || acc.email || acc.id
+    const label = (w.group ? w.group + ' · ' : '') + (w.label || '')
+    return { text: 'Antigravity ' + name + ' · ' + label + ' ' + fmtPct(w.usedPercent), alert: remaining(w.usedPercent) < 5 }
   }
   if (pinned.provider === 'opencode') {
     const acc = ((status.opencode && status.opencode.accounts) || []).find(function (a) { return a.id === pinned.accountId })
     if (!acc || acc.hidden || acc.status !== 'ok') return null
     const w = ((acc.windows || []).find(function (x) { return x.key === pinned.windowKey })) || (acc.windows || [])[0]
-    if (!w) return null
-    return { text: 'opencode ' + (acc.alias || acc.id) + ' · ' + (OC_LABELS[w.key] || w.key) + ' ' + Math.round(w.usedPercent) + '%', alert: remaining(w.usedPercent) < 5 }
+    if (!w || w.usedPercent == null) return null
+    return { text: 'opencode ' + (acc.alias || acc.id) + ' · ' + (OC_LABELS[w.key] || w.key) + ' ' + fmtPct(w.usedPercent), alert: remaining(w.usedPercent) < 5 }
   }
   if (pinned.provider === 'deepseek') {
     const acc = ((status.deepseek && status.deepseek.accounts) || []).find(function (a) { return a.id === pinned.accountId })
@@ -287,6 +330,7 @@ function Chip() {
 
 function pinToValue(pinned) {
   if (!pinned) return ''
+  if (pinned.provider === 'antigravity') return 'antigravity|' + pinned.accountId + '|' + (pinned.windowKey || '')
   if (pinned.provider === 'opencode') return 'opencode|' + pinned.accountId + '|' + (pinned.windowKey || '')
   if (pinned.provider === 'deepseek') return 'deepseek|' + pinned.accountId + '|balance'
   return 'codex|weekly'
@@ -296,6 +340,7 @@ function valueToPin(value) {
   if (!value) return null
   const parts = value.split('|')
   if (parts[0] === 'codex') return { provider: 'codex', accountId: null, windowKey: 'weekly' }
+  if (parts[0] === 'antigravity') return { provider: 'antigravity', accountId: parts[1], windowKey: parts[2] || '' }
   if (parts[0] === 'opencode') return { provider: 'opencode', accountId: parts[1], windowKey: parts[2] || 'weekly' }
   if (parts[0] === 'deepseek') return { provider: 'deepseek', accountId: parts[1], windowKey: 'balance' }
   return null
@@ -305,12 +350,22 @@ function pinOptions(status) {
   const opts = []
   const codex = status && status.codex
   if (codex && codex.present) opts.push({ value: 'codex|weekly', label: 'Codex Plus · 周窗口' })
+  ;(((status && status.antigravity && status.antigravity.accounts) || [])).forEach(function (a) {
+    if (a.hidden) return
+    ;((a.windows || [])).forEach(function (w) {
+      const name = a.alias || a.email || a.id
+      const label = (w.group ? w.group + ' · ' : '') + (w.label || '')
+      opts.push({ value: 'antigravity|' + a.id + '|' + (w.key || label), label: 'Antigravity ' + name + ' · ' + label })
+    })
+  })
   ;(((status && status.opencode && status.opencode.accounts) || [])).forEach(function (a) {
+    if (a.hidden) return
     ;((a.windows || [])).forEach(function (w) {
       opts.push({ value: 'opencode|' + a.id + '|' + w.key, label: 'opencode-go ' + (a.alias || a.id) + ' · ' + (OC_LABELS[w.key] || w.key) })
     })
   })
   ;(((status && status.deepseek && status.deepseek.accounts) || [])).forEach(function (a) {
+    if (a.hidden) return
     opts.push({ value: 'deepseek|' + a.id + '|balance', label: 'DeepSeek ' + (a.alias || a.id) + ' · 余额' })
   })
   return opts
@@ -468,7 +523,7 @@ function SettingsPage() {
         el('input', { type: 'password', value: key, onChange: function (e) { setKey(e.target.value) }, style: inputStyle, placeholder: 'API key' }),
         el('button', { type: 'button', onClick: doAdd, style: btnStyle, children: '添加账号' }),
       ] }),
-      el('div', { style: { fontSize: 11, color: C.fg3, marginTop: 8, lineHeight: 1.6 }, children: 'key 明文存储在后端目录 accounts.json，界面仅显示脱敏尾号。Codex Plus 无需配置，检测到 ~/.codex/auth.json 即自动出现。' }),
+      el('div', { style: { fontSize: 11, color: C.fg3, marginTop: 8, lineHeight: 1.6 }, children: 'key 明文存储在后端目录 accounts.json，界面仅显示脱敏尾号。Codex Plus 与 Antigravity 账号由后端自动检测（Codex: ~/.codex/auth.json，Antigravity: ~/.cli-proxy-api/auth/），无需在此手动添加或管理密钥。' }),
     ] }),
   ] })
 }

@@ -1,6 +1,6 @@
 # LLM Provider Quota / Balance API Research
 
-Three providers: exact endpoints, auth, response shapes, rate limits, docs URLs, and caveats.
+Four providers: exact endpoints, auth, response shapes, rate limits, docs URLs, and caveats.
 All endpoints were verified by inspecting the official client source and/or hitting the endpoint live with a dummy credential to confirm routing/response shape.
 
 ---
@@ -107,7 +107,7 @@ curl -s "https://auth.openai.com/oauth/token" \
 `GET https://opencode.ai/zen/go/v1/usage`
 
 Headers:
-- `Authorization: Bearer <your_api_key>` — **required**. Your OpenCode Zen/**Go API key** (from the opencode.ai console). The handler matches `/^Bearer (S+)$/` and looks up the key.
+- `Authorization: Bearer <your_api_key>` — **required**. Your OpenCode Zen/**Go API key** (from the opencode.ai console). The handler matches `/^Bearer (\S+)$/` and looks up the key.
 
 curl example:
 
@@ -201,19 +201,104 @@ Sample JSON response (official docs; live-verified — invalid key returns 401 `
 
 ---
 
+## 4) Antigravity (Google Cloud Code PA via CLIProxyAPI)
+
+**Bottom line: CLIProxyAPI manages Antigravity OAuth tokens locally in `~/.cli-proxy-api/auth/antigravity-*.json`. Quota summary and plan info are fetched from internal Google Cloud Code PA endpoints.**
+
+### Quota summary endpoint (internal Google Cloud Code PA API)
+
+`POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`
+
+Body (JSON):
+```json
+{
+  "project": "<project_id>"
+}
+```
+
+Headers:
+- `Authorization: Bearer <access_token>` — **required**. Antigravity OAuth Bearer token.
+- `Content-Type: application/json`
+- `User-Agent: Antigravity/1.0.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36`
+- `Client-Metadata: {"ideType":"ANTIGRAVITY"}`
+- `X-Goog-Api-Client: antigravity`
+
+Sample JSON response:
+```json
+{
+  "groups": [
+    {
+      "displayName": "Gemini",
+      "description": "Gemini quota group",
+      "buckets": [
+        {
+          "bucketId": "gemini-5h",
+          "displayName": "5 小时",
+          "remainingFraction": 0.9998,
+          "resetTime": "2026-04-01T05:00:00Z"
+        },
+        {
+          "bucketId": "gemini-weekly",
+          "displayName": "本周",
+          "remainingFraction": 0.85,
+          "resetTime": "2026-04-05T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "displayName": "Claude / GPT",
+      "description": "3P quota group",
+      "buckets": [
+        {
+          "bucketId": "3p-5h",
+          "displayName": "5 小时",
+          "remainingFraction": 1.0,
+          "resetTime": "2026-04-01T05:00:00Z"
+        },
+        {
+          "bucketId": "3p-weekly",
+          "displayName": "本周",
+          "remainingFraction": 0.575,
+          "resetTime": "2026-04-05T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Plan information endpoint (best effort)
+
+`POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`
+
+Body: `{"metadata": {"ideType": "ANTIGRAVITY"}}`
+Headers: Same Bearer token, Content-Type, and Antigravity metadata headers.
+Response provides `paidTier.name` (e.g. `"Google AI Pro"`). If unavailable, falls back to `null` (UI shows default tag `"Antigravity"`).
+
+### Auth discovery & proxy configuration
+- Credential files are discovered from `~/.cli-proxy-api/auth/antigravity-*.json` (overridable via `CLIPROXY_AUTH_DIR`).
+- Accounts with `disabled: true` are skipped.
+- Proxy URL is resolved from `CLIPROXY_PROXY_URL` or the top-level `proxy-url` in `~/.cli-proxy-api/config.yaml`; nested provider-specific values are ignored.
+- The stdlib backend supports HTTP/HTTPS proxies only. A `socks5://`/`socks5h://` value is rejected with a safe configuration error; use an HTTP/HTTPS proxy endpoint for `CLIPROXY_PROXY_URL`.
+- On HTTP 401, the credential file is re-read once from disk to pick up any background token refresh performed by CLIProxyAPI. The plugin never writes back tokens to disk.
+- Token, project_id, and proxy credentials are kept strictly private and never returned in API responses or logs.
+
+---
+
 ## Dashboard implementation notes (desktop plugin WebView)
 
 | Provider | Endpoint | Auth | Needs login session? | CORS-friendly? | Cost/quota semantics |
 |---|---|---|---|---|---|
 | Codex / Codex Plus | `GET chatgpt.com/backend-api/wham/usage` | `Bearer <OAuth JWT>` | **Yes** — OAuth token | Yes (reflects origin) | 5h + weekly windows + credits; `plan_type` tier |
+| Antigravity | `POST daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary` | `Bearer <access_token>` | **Yes** — CLIProxyAPI token | No (internal Google PA) | Gemini & Claude/GPT 5h/weekly windows; Google AI Pro / Antigravity tag |
 | OpenCode Go | `GET opencode.ai/zen/go/v1/usage` | `Bearer <Zen API key>` | No (plain key) | **No** (no CORS) | rolling 5h/$12 + weekly/$30 + monthly/$60 |
 | DeepSeek | `GET api.deepseek.com/user/balance` | `Bearer <API key>` | No (plain key) | Yes | balance buckets per currency |
 
-**Biggest integration caveats:**
-1. **Codex & OpenCode endpoints are undocumented/unofficial** — used by official clients/consoles but may change without notice.
-2. **Codex needs a captured/refreshed OAuth session** (auth.json + refresh flow); a raw OpenAI platform key won't work. OpenCode & DeepSeek need only the plain API key.
-3. **OpenCode Go usage is not CORS-enabled** — proxy it (local server or platform native fetch) if the dashboard renders in a browser WebView. Codex & DeepSeek reflect CORS.
-4. For Codex, consider the **local `codex app-server` JSON-RPC** (`account/rateLimits/read`) as an alternative that avoids token parsing.
+### Biggest integration caveats:
+1. **Codex, OpenCode, and Antigravity endpoints are undocumented/internal** — used by official clients/consoles/proxies but may change without notice.
+2. **Codex & Antigravity need captured OAuth sessions** (`~/.codex/auth.json` or `~/.cli-proxy-api/auth/antigravity-*.json`). OpenCode & DeepSeek need API keys.
+3. **OpenCode Go usage and Antigravity are routed through the Python backend** to handle proxying, headers, token refresh, and CORS.
+4. **Security**: Token and project IDs are never returned to the frontend or logged in plain text.
 
 ### Key source URLs
 - Codex CLI usage client: https://github.com/openai/codex → `codex-rs/backend-client/src/client/rate_limit_resets.rs`
